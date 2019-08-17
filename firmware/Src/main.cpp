@@ -22,9 +22,8 @@
 
 #define NODE_ADDRESS WATER_NODE_ADDRESS
 
-uint8_t netAddress[] = {0x22, 0xBB, 0x55};
-uint8_t serverAddress[] = {0x11, 0xBB, 0x55};
-#define payload_length 16
+uint8_t netAddress[] = {0x23, 0x1B, 0x25};
+uint8_t serverAddress[] = {0x12, 0x3B, 0x45};
 
 /* Private variables ---------------------------------------------------------*/
 RTC_HandleTypeDef hrtc;
@@ -62,7 +61,6 @@ typedef struct {
 	uint8_t reserved[13]; 	//13 31
 	uint8_t crc;			//1  32
 }__attribute__((packed, aligned(4))) nodeData_s;
-
 
 bool reportToServer = false;
 
@@ -186,6 +184,13 @@ void reportNow()
 
 bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 {
+	if(pipe != 0)
+	{
+		printf(RED("%d NOT correct pipe\n"), pipe);
+		return false;
+	}
+
+
 	if(CRC_8::crc(data, 32))
 	{
 		printf(RED("CRC error\n"));
@@ -195,8 +200,7 @@ bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 	bool reportNow = false;
 	nodeData_s down;
 	memcpy(&down, data, len);
-
-	printf("RX 0x%02X\n", down.nodeAddress);
+	printf("NRF RX [0x%02X]\n", down.nodeAddress);
 
 	//Check of this is not my data
 	if(down.nodeAddress != NODE_ADDRESS)
@@ -272,8 +276,6 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
 
- // DrivewayMotors motors(&lights, &streetGate, &houseGate);
-
   HAL_Delay(1000);
 
   MX_USB_DEVICE_Init();
@@ -299,18 +301,11 @@ int main(void)
   MX_SPI1_Init();
   MX_ADC1_Init();
 
-  if(HAL_GPIO_ReadPin(NRF_ADDR0_GPIO_Port, NRF_ADDR0_Pin) == GPIO_PIN_RESET)
-	  netAddress[0] |= 0x01;
-
-  if(HAL_GPIO_ReadPin(NRF_ADDR1_GPIO_Port, NRF_ADDR1_Pin) == GPIO_PIN_RESET)
-	  netAddress[0] |= 0x02;
-
   InterfaceNRF24::init(&hspi1, netAddress, 3);
   InterfaceNRF24::get()->setRXcb(NRFreceivedCB);
 
   printf("Bluepill @ %dHz\n", (int)HAL_RCC_GetSysClockFreq());
   MX_RTC_Init();
-
 
 //  report(netAddress);
   HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
@@ -507,18 +502,6 @@ static void MX_GPIO_Init(void)
 	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
 	GPIO_InitStruct.Pull = GPIO_PULLUP;
 	HAL_GPIO_Init(NRF_IRQ_GPIO_Port, &GPIO_InitStruct);
-
-	/*Configure GPIO pin : NRF_ADDR0_Pin */
-	GPIO_InitStruct.Pin = NRF_ADDR0_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-	GPIO_InitStruct.Pull = GPIO_PULLUP;
-	HAL_GPIO_Init(NRF_ADDR0_GPIO_Port, &GPIO_InitStruct);
-
-	/*Configure GPIO pin : NRF_ADDR1_Pin */
-	GPIO_InitStruct.Pin = NRF_ADDR1_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-	GPIO_InitStruct.Pull = GPIO_PULLUP;
-	HAL_GPIO_Init(NRF_ADDR1_GPIO_Port, &GPIO_InitStruct);
 
 	GPIO_InitStruct.Pin = WATER_OUT_Pin;
 	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;

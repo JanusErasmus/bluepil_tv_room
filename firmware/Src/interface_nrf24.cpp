@@ -86,11 +86,9 @@ void printPipes()
 InterfaceNRF24::InterfaceNRF24(SPI_HandleTypeDef *spi_handle, uint8_t *net_addr, int len)
 {
 	mPacketsLost = 0;
-	mNetAddressLen = len;
-	uint8_t temp_addr[5];
-	memcpy(temp_addr, net_addr, len);
-	memcpy(mNetAddress, net_addr, len);
 	mSPI = spi_handle;
+
+	memcpy(mNetAddress, net_addr, 8);
 
 	nrf_cb.nRF24_T = nrf_t;
 	nrf_cb.nRF24_CSN_L = nrf_cs_l;
@@ -116,7 +114,6 @@ InterfaceNRF24::InterfaceNRF24(SPI_HandleTypeDef *spi_handle, uint8_t *net_addr,
 	// Configure RX PIPES
 	nRF24_SetAddr(nRF24_PIPE0, net_addr);
 	nRF24_SetRXPipe(nRF24_PIPE0	, nRF24_AA_OFF, 32);
-
 
 	// Set TX power for Auto-ACK (maximum, to ensure that transmitter will hear ACK reply)
 	nRF24_SetTXPower(nRF24_TXPWR_0dBm);
@@ -156,9 +153,11 @@ nRF24_TXResult InterfaceNRF24::transmitPacket(uint8_t *pBuf, uint8_t length)
 
 	// Deassert the CE pin (in case if it still high)
 	nrf_ce_l();
+	HAL_Delay(1);
 
 	// Transfer a data from the specified buffer to the TX FIFO
 	nRF24_WritePayload(pBuf, length);
+	HAL_Delay(100);
 
 	// Start a transmission by asserting CE pin (must be held at least 10us)
 	nrf_ce_h();
@@ -221,7 +220,7 @@ int InterfaceNRF24::transmit(uint8_t *addr, uint8_t *payload, uint8_t length)
 	nRF24_TXResult tx_res = transmitPacket(payload, length);
 	uint8_t otx = nRF24_GetRetransmitCounters();
 	uint8_t otx_plos_cnt = (otx & nRF24_MASK_PLOS_CNT) >> 4; // packets lost counter
-	uint8_t otx_arc_cnt  = (otx & nRF24_MASK_ARC_CNT); // auto retransmissions counter
+	//uint8_t otx_arc_cnt  = (otx & nRF24_MASK_ARC_CNT); // auto retransmissions counter
 	switch (tx_res) {
 	case nRF24_TX_SUCCESS:
 		printf(GREEN(" - OK\n"));
@@ -246,13 +245,15 @@ int InterfaceNRF24::transmit(uint8_t *addr, uint8_t *payload, uint8_t length)
 	//printf(" - ARC= %d LOST= %d\n", (int)otx_arc_cnt, (int)mPacketsLost);
 
 	//	// Clear pending IRQ flags
-	    nRF24_ClearIRQFlags();
-	    nRF24_GetStatus();
+	nRF24_ClearIRQFlags();
+	nRF24_GetStatus();
+
+    HAL_Delay(100);
+    nRF24_SetAddr(nRF24_PIPE0, mNetAddress); // program RX address
+    HAL_Delay(100);
 
 	// Set operational mode (PRX == receiver)
 	nRF24_SetOperationalMode(nRF24_MODE_RX);
-
-	//nRF24_SetAddr(nRF24_PIPE0, mNetAddress); // reset address to receive data on PIPE0
 
 	return tx_length;
 }

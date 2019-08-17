@@ -65,20 +65,6 @@
 #define NRF_CE_GPIO_Port GPIOB
 #define NRF_IRQ_Pin GPIO_PIN_0
 #define NRF_IRQ_GPIO_Port GPIOB
-#define NRF_ADDR0_GPIO_Port GPIOA
-#define NRF_ADDR0_Pin GPIO_PIN_2
-#define NRF_ADDR1_GPIO_Port GPIOA
-#define NRF_ADDR1_Pin GPIO_PIN_3
-
-
-//#define LEFT_DOOR_IN_CLOSE_Port 	GPIOA
-//#define LEFT_DOOR_IN_CLOSE_Pin 	    GPIO_PIN_2
-//#define LEFT_DOOR_IN_OPEN_Port     	GPIOA
-//#define LEFT_DOOR_IN_OPEN_Pin 	    GPIO_PIN_1
-//#define RIGHT_DOOR_IN_CLOSE_Port    GPIOB
-//#define RIGHT_DOOR_IN_CLOSE_Pin 	GPIO_PIN_11
-//#define RIGHT_DOOR_IN_OPEN_Port 	GPIOB
-//#define RIGHT_DOOR_IN_OPEN_Pin 		GPIO_PIN_10
 
 #define WATER_OUT_Port 	            GPIOB
 #define WATER_OUT_Pin 	            GPIO_PIN_8
