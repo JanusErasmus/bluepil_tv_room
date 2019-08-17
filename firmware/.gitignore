@@ -1,0 +1,10 @@
+doc
+.settings/
+Drivers/CMSIS/Device/ST/STM32F1xx/Source/Templates/
+Drivers/CMSIS/DSP_Lib/
+Drivers/CMSIS/Lib/
+*.bin
+*.ioc
+*.scratch
+build/
+load*
