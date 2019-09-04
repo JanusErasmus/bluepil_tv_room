@@ -22,6 +22,8 @@
 
 #define NODE_ADDRESS WATER_NODE_ADDRESS
 
+#define MINIMUM_REPORT_RATE 600000// 1800000
+
 uint8_t netAddress[] = {0x23, 0x1B, 0x25};
 uint8_t serverAddress[] = {0x12, 0x3B, 0x45};
 
@@ -63,6 +65,7 @@ typedef struct {
 }__attribute__((packed, aligned(4))) nodeData_s;
 
 bool reportToServer = false;
+uint32_t openTime = 0;
 
 void setWater(bool state)
 {
@@ -73,13 +76,18 @@ void setWater(bool state)
 		HAL_GPIO_WritePin(WATER_OUT_Port, WATER_OUT_Pin, GPIO_PIN_SET);
 		HAL_Delay(1000);
 		HAL_GPIO_WritePin(WATER_OUT_Port, WATER_OUT_Pin, GPIO_PIN_RESET);
+
+		//close valve after 15 minutes
+		openTime = HAL_GetTick() + (15 * 60000);
 	}
 	else
 	{
+		openTime = 0;
 		HAL_GPIO_WritePin(WATER_HOLD_OUT_Port, WATER_HOLD_OUT_Pin, GPIO_PIN_RESET);
 		HAL_GPIO_WritePin(WATER_OUT_Port, WATER_OUT_Pin, GPIO_PIN_RESET);
 	}
 
+	reportToServer = true;
 }
 
 uint32_t getADCstep()
@@ -108,68 +116,98 @@ uint32_t getADCstep()
 	return step;
 }
 
-uint32_t sampleTemperature()
+void sampleAnalog(
+		double &temperature,
+		double &voltage0)
 {
-	uint32_t adc = 0;
+	uint32_t adc0 = 0;
+	uint32_t adc1 = 0;
+	uint32_t adc2 = 0;
 
-	ADC_ChannelConfTypeDef sConfig;
-  sConfig.Channel = ADC_CHANNEL_TEMPSENSOR;
-  sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
-  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
 
-	HAL_ADC_Start(&hadc1);
-	if(HAL_ADC_PollForConversion(&hadc1, 1000) == HAL_OK)
+	HAL_ADCEx_Calibration_Start(&hadc1);
+	for (int k = 0; k < 16; ++k)
 	{
-		adc = HAL_ADC_GetValue(&hadc1);
-		//printf("ADC: %d\n", adc);
+		HAL_ADC_Start(&hadc1);
+		if(HAL_ADC_PollForConversion(&hadc1, 1000) == HAL_OK)
+		{
+			adc0 += HAL_ADC_GetValue(&hadc1);
+		}
+
+		HAL_ADC_Start(&hadc1);
+		if(HAL_ADC_PollForConversion(&hadc1, 1000) == HAL_OK)
+		{
+			adc1 += HAL_ADC_GetValue(&hadc1);
+		}
+
+		HAL_ADC_Start(&hadc1);
+		if(HAL_ADC_PollForConversion(&hadc1, 1000) == HAL_OK)
+		{
+			adc2 += HAL_ADC_GetValue(&hadc1);
+		}
+
+
+		HAL_Delay(20);
 	}
 	HAL_ADC_Stop(&hadc1);
 
+	adc0 >>= 4;
+	adc1 >>= 4;
+	adc2 >>= 4;
 
-	return adc;
+//	printf("ADC0: %5ld ", adc0);
+//	printf("ADC1: %5ld ", adc1);
+//	printf("ADC2: %5ld ", adc2);
+//	printf("ADC3: %5ld\n", adc3);
+
+	//this amount of steps measure 1.2V
+	double step = 1.2 / adc0;
+//	printf(" s	%0.3f\n", step);
+	double voltage = ((double)adc1 * step);
+	voltage = 1.43 - voltage;
+//	printf(" -	%0.3f\n", voltage);
+	voltage /= 0.0043;
+//	printf(" /	%0.3f\n", voltage);
+	temperature = (25.0 + voltage) - 11;
+
+	//measure raw voltage
+	voltage0 = (((double)adc2 * step) + 0.01);
 }
 
-uint32_t getTemperature()
-{
-	uint32_t sum = 0;
 
-	HAL_ADCEx_Calibration_Start(&hadc1);
-
-	for (int k = 0; k < 8; ++k) {
-		sum += sampleTemperature();
-	}
-
-	uint32_t adc = sum >> 3;
-	//printf("adc: %d\n" , (int)adc);
-	int voltage = adc * getADCstep();//845666; //x10^9
-	//printf(" *	%d\n", voltage);
-	voltage = 1.43e9 - voltage;
-	//printf(" -	%d\n", voltage);
-	voltage /= 4.3e3;
-	//printf(" /	%d\n", voltage);
-
-	uint32_t temp = 25000 + voltage;
-	//printf("temp: %d\n", (int)temp);
-	return temp;
-}
-
-void report(uint8_t *address)
+void report(uint8_t *address, bool sampled)
 {
 //	printf("NOT reporting\n");
+
+	double tempInt;
+	double tempExt;
+
+	sampleAnalog(tempInt, tempExt);
+	tempExt = (tempExt * 100) - 273.0;
 
 	nodeData_s pay;
 	memset(&pay, 0, 32);
 	pay.nodeAddress = NODE_ADDRESS;
 	pay.timestamp = HAL_GetTick();
-	pay.temperature = getTemperature();
-	pay.voltages[0] = 2;
+	pay.temperature = tempExt * 1000;
 
 	if(HAL_GPIO_ReadPin(WATER_HOLD_OUT_Port, WATER_HOLD_OUT_Pin) == GPIO_PIN_SET)
+	{
 		pay.voltages[0] = 1;
+	}
+	else
+	{
+		pay.voltages[0] = 2;
+	}
+
+	if(openTime)
+	{
+		pay.voltages[1] = (openTime - HAL_GetTick()) / 1000;
+	}
+
+	//let the server know when the sample was taken as a sample
+	if(sampled)
+		pay.voltages[2] = 1;
 
 	pay.crc = CRC_8::crc((uint8_t*)&pay, 31);
 
@@ -177,9 +215,9 @@ void report(uint8_t *address)
 	printf("TX result %d\n", InterfaceNRF24::get()->transmit(address, (uint8_t*)&pay, 32));
 }
 
-void reportNow()
+void reportNow(bool sampled)
 {
-	report(serverAddress);
+	report(serverAddress, sampled);
 }
 
 bool NRFreceivedCB(int pipe, uint8_t *data, int len)
@@ -259,6 +297,16 @@ bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 	{
 		printf("Set Outputs %d\n", down.outputs);
 
+		if(down.outputs & 0x01)
+		{
+			printf("Opening valve\n");
+			setWater(true);
+		}
+		else
+		{
+			printf("Closing valve\n");
+			setWater(false);
+		}
 	}
 
 	return false;
@@ -310,6 +358,8 @@ int main(void)
 //  report(netAddress);
   HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
 
+  uint32_t lastSample = 0;
+
   /* Infinite loop */
   while (1)
   {
@@ -318,14 +368,27 @@ int main(void)
 
 	  if(reportToServer)
 	  {
-		  //before transmitting wait 200 ms intervals of node address
+		  //before transmitting wait 500 ms intervals of node address
 		  HAL_Delay(200 + (NODE_ADDRESS * 200));
-		  reportNow();
+		  reportNow(false);
 		  reportToServer = false;
+		  lastSample = HAL_GetTick() + MINIMUM_REPORT_RATE;
 	  }
 
       HAL_Delay(100);
       HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+
+      if(lastSample < HAL_GetTick())
+      {
+    	  lastSample = HAL_GetTick() + MINIMUM_REPORT_RATE;
+    	  reportNow(true);
+      }
+
+      if(openTime)
+      {
+    	  if(openTime < HAL_GetTick())
+    		  setWater(false);
+      }
   }
 
 }
@@ -515,6 +578,11 @@ static void MX_GPIO_Init(void)
 	HAL_GPIO_Init(WATER_HOLD_OUT_Port, &GPIO_InitStruct);
 	HAL_GPIO_WritePin(WATER_HOLD_OUT_Port, WATER_HOLD_OUT_Pin, GPIO_PIN_RESET);
 
+	/*Configure GPIO pin : ADC12_IN0 */
+	GPIO_InitStruct.Pin = GPIO_PIN_0;
+	GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+	GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
 }
 
@@ -543,17 +611,44 @@ static void MX_SPI1_Init(void)
 /* ADC1 init function */
 static void MX_ADC1_Init(void)
 {
-  hadc1.Instance = ADC1;
-  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE	;
-  hadc1.Init.ContinuousConvMode = DISABLE;
-  hadc1.Init.DiscontinuousConvMode = DISABLE;
-  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
-  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 1;
-  if (HAL_ADC_Init(&hadc1) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
+	hadc1.Instance = ADC1;
+	hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+	hadc1.Init.ScanConvMode = ADC_SCAN_ENABLE	;
+	hadc1.Init.DiscontinuousConvMode = ENABLE;
+	hadc1.Init.ContinuousConvMode = DISABLE;
+	hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+	hadc1.Init.NbrOfDiscConversion = 1;
+	hadc1.Init.NbrOfConversion = 3;
+	if (HAL_ADC_Init(&hadc1) != HAL_OK)
+	{
+		_Error_Handler(__FILE__, __LINE__);
+	}
+
+
+	ADC_ChannelConfTypeDef sConfig;
+	sConfig.Channel = ADC_CHANNEL_VREFINT;
+	sConfig.Rank = ADC_REGULAR_RANK_1;
+	sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+	{
+		_Error_Handler(__FILE__, __LINE__);
+	}
+
+	sConfig.Channel = ADC_CHANNEL_TEMPSENSOR;
+	sConfig.Rank = ADC_REGULAR_RANK_2;
+	sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+	{
+		_Error_Handler(__FILE__, __LINE__);
+	}
+
+	sConfig.Channel = ADC_CHANNEL_0;
+	sConfig.Rank = ADC_REGULAR_RANK_3;
+	sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+	if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+	{
+		_Error_Handler(__FILE__, __LINE__);
+	}
 }
 
 /* TIM2 init function */
@@ -597,15 +692,21 @@ void nrf(uint8_t argc, char **argv)
 			address[0] = strtoul(argv[1], 0, 16);
 		}
 
-		report(address);
+		report(address, false);
 
 	}
 }
 
 void adc(uint8_t argc, char **argv)
 {
-	uint32_t temp = getTemperature();
-	printf("temp: %dmC\n", (int)temp);
+
+	double tempInt;
+	double tempExt;
+
+	sampleAnalog(tempInt, tempExt);
+	tempExt = (tempExt * 100) - 273.0;
+
+	printf("temp: %0.3f C %0.3f C\n", tempInt, tempExt);
 }
 
 
