@@ -6,6 +6,7 @@
 #include "Utils/crc.h"
 #include "Utils/terminal_serial.h"
 #include "stm32f1xx_hal.h"
+#include "iwdg.h"
 
 #include "Utils/terminal.h"
 #include "Utils/utils.h"
@@ -348,6 +349,7 @@ int main(void)
 
   MX_SPI1_Init();
   MX_ADC1_Init();
+  MX_IWDG_Init();
 
   InterfaceNRF24::init(&hspi1, netAddress, 3);
   InterfaceNRF24::get()->setRXcb(NRFreceivedCB);
@@ -389,6 +391,7 @@ int main(void)
     	  if(openTime < HAL_GetTick())
     		  setWater(false);
       }
+      MX_IWDG_Refresh();
   }
 
 }
