@@ -15,18 +15,28 @@
 
 #define STREET_NODE_ADDRESS     0x00
 #define UPS_NODE_ADDRESS        0x01
-#define UPS12V_NODE_ADDRESS     0x02
+#define LIVING_NODE_ADDRESS     0x02
 #define FERMENTER_NODE_ADDRESS  0x03
 #define HOUSE_NODE_ADDRESS      0x04
 #define GARAGE_NODE_ADDRESS     0x05
 #define WATER_NODE_ADDRESS      0x06
 
-#define NODE_ADDRESS WATER_NODE_ADDRESS
+#define NODE_ADDRESS LIVING_NODE_ADDRESS
 
 #define MINIMUM_REPORT_RATE 600000// 1800000
 
 uint8_t netAddress[] = {0x23, 0x1B, 0x25};
 uint8_t serverAddress[] = {0x12, 0x3B, 0x45};
+
+enum relay_states_e
+{
+	RELAY_STATIC,
+	RELAY_OFF,
+	RELAY_TV,
+	RELAY_RUNNING,
+	RELAY_DISCO
+}relay_state = RELAY_STATIC;
+
 
 /* Private variables ---------------------------------------------------------*/
 RTC_HandleTypeDef hrtc;
@@ -68,28 +78,6 @@ typedef struct {
 bool reportToServer = false;
 uint32_t openTime = 0;
 
-void setWater(bool state)
-{
-	//pull solinoid in for 1s
-	if(state)
-	{
-		HAL_GPIO_WritePin(WATER_HOLD_OUT_Port, WATER_HOLD_OUT_Pin, GPIO_PIN_SET);
-		HAL_GPIO_WritePin(WATER_OUT_Port, WATER_OUT_Pin, GPIO_PIN_SET);
-		HAL_Delay(1000);
-		HAL_GPIO_WritePin(WATER_OUT_Port, WATER_OUT_Pin, GPIO_PIN_RESET);
-
-		//close valve after 15 minutes
-		openTime = HAL_GetTick() + (15 * 60000);
-	}
-	else
-	{
-		openTime = 0;
-		HAL_GPIO_WritePin(WATER_HOLD_OUT_Port, WATER_HOLD_OUT_Pin, GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(WATER_OUT_Port, WATER_OUT_Pin, GPIO_PIN_RESET);
-	}
-
-	reportToServer = true;
-}
 
 uint32_t getADCstep()
 {
@@ -175,6 +163,57 @@ void sampleAnalog(
 	voltage0 = (((double)adc2 * step) + 0.01);
 }
 
+void setRelay(uint8_t id, bool state)
+{
+	GPIO_PinState out = GPIO_PIN_SET;
+	if(state)
+		out = GPIO_PIN_RESET;
+
+	switch(id)
+	{
+	case 1:
+		HAL_GPIO_WritePin(RL1_OUT_Port, RL1_OUT_Pin, out);
+		break;
+	case 2:
+		HAL_GPIO_WritePin(RL2_OUT_Port, RL2_OUT_Pin, out);
+		break;
+	case 3:
+		HAL_GPIO_WritePin(RL3_OUT_Port, RL3_OUT_Pin, out);
+		break;
+	case 4:
+		HAL_GPIO_WritePin(RL4_OUT_Port, RL4_OUT_Pin, out);
+		break;
+
+	default:
+		break;
+	}
+}
+
+
+bool getRelay(uint8_t id)
+{
+	switch(id)
+	{
+	case 1:
+		return !HAL_GPIO_ReadPin(RL1_OUT_Port, RL1_OUT_Pin);
+		break;
+	case 2:
+		return !HAL_GPIO_ReadPin(RL2_OUT_Port, RL2_OUT_Pin);
+		break;
+	case 3:
+		return !HAL_GPIO_ReadPin(RL3_OUT_Port, RL3_OUT_Pin);
+		break;
+	case 4:
+		return !HAL_GPIO_ReadPin(RL4_OUT_Port, RL4_OUT_Pin);
+		break;
+
+	default:
+		return false;
+		break;
+	}
+
+	return false;
+}
 
 void report(uint8_t *address, bool sampled)
 {
@@ -192,13 +231,11 @@ void report(uint8_t *address, bool sampled)
 	pay.timestamp = HAL_GetTick();
 	pay.temperature = tempExt * 1000;
 
-	if(HAL_GPIO_ReadPin(WATER_HOLD_OUT_Port, WATER_HOLD_OUT_Pin) == GPIO_PIN_SET)
+	pay.outputs = 0;
+	for (int k = 0; k < 4; ++k)
 	{
-		pay.voltages[0] = 1;
-	}
-	else
-	{
-		pay.voltages[0] = 2;
+		if(getRelay(k + 1))
+			pay.outputs |= (1 << k);
 	}
 
 	if(openTime)
@@ -298,16 +335,22 @@ bool NRFreceivedCB(int pipe, uint8_t *data, int len)
 	{
 		printf("Set Outputs %d\n", down.outputs);
 
+		relay_state = RELAY_OFF;
+
+		//toggle relay 1 when OUTPUT0 is set
 		if(down.outputs & 0x01)
 		{
-			printf("Opening valve\n");
-			setWater(true);
+			setRelay(1, true);
+			HAL_Delay(300);
+			setRelay(1, false);
 		}
-		else
-		{
-			printf("Closing valve\n");
-			setWater(false);
-		}
+
+		if(down.outputs & 0x02)
+			relay_state = RELAY_TV;
+
+		if(down.outputs & 0x04)
+			relay_state = RELAY_RUNNING;
+
 	}
 
 	return false;
@@ -361,6 +404,8 @@ int main(void)
   HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
 
   uint32_t lastSample = 0;
+  uint32_t tick = HAL_GetTick()  + 500;
+  int id = 0;
 
   /* Infinite loop */
   while (1)
@@ -386,11 +431,58 @@ int main(void)
     	  reportNow(true);
       }
 
-      if(openTime)
+      if(tick < HAL_GetTick())
       {
-    	  if(openTime < HAL_GetTick())
-    		  setWater(false);
+    	  tick = HAL_GetTick()  + 500;
+    	  switch(relay_state)
+    	  {
+    	  default:
+    	  case RELAY_STATIC:
+    		  break;
+
+    	  case RELAY_OFF:
+    		  setRelay(2, false);
+    		  setRelay(3, false);
+    		  setRelay(4, false);
+    		  relay_state = RELAY_STATIC;
+    		  break;
+
+
+    	  case RELAY_TV:
+    		  setRelay(2, true);
+    		  setRelay(3, true);
+    		  setRelay(4, false);
+    		  relay_state = RELAY_STATIC;
+    		  break;
+
+    	  case RELAY_RUNNING:
+    	  {
+    		  switch(id)
+    		  {
+    		  case 0:
+    		  setRelay(2, false);
+    		  setRelay(3, true);
+    		  setRelay(4, true);
+    		  break;
+
+    		  case 1:
+    		  setRelay(2, true);
+    		  setRelay(3, false);
+    		  setRelay(4, true);
+    		  break;
+
+    		  case 2:
+    		  setRelay(2, true);
+    		  setRelay(3, true);
+    		  setRelay(4, false);
+    		  id = -1;
+    		  break;
+    		  };
+    		  id++;
+    	  }
+    	  };
       }
+
       MX_IWDG_Refresh();
   }
 
@@ -569,17 +661,33 @@ static void MX_GPIO_Init(void)
 	GPIO_InitStruct.Pull = GPIO_PULLUP;
 	HAL_GPIO_Init(NRF_IRQ_GPIO_Port, &GPIO_InitStruct);
 
-	GPIO_InitStruct.Pin = WATER_OUT_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	HAL_GPIO_Init(WATER_OUT_Port, &GPIO_InitStruct);
-	HAL_GPIO_WritePin(WATER_OUT_Port, WATER_OUT_Pin, GPIO_PIN_RESET);
 
-	GPIO_InitStruct.Pin = WATER_HOLD_OUT_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	HAL_GPIO_WritePin(RL1_OUT_Port, RL1_OUT_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(RL2_OUT_Port, RL2_OUT_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(RL3_OUT_Port, RL3_OUT_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(RL4_OUT_Port, RL4_OUT_Pin, GPIO_PIN_SET);
+
+
+	GPIO_InitStruct.Pin = RL1_OUT_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	HAL_GPIO_Init(WATER_HOLD_OUT_Port, &GPIO_InitStruct);
-	HAL_GPIO_WritePin(WATER_HOLD_OUT_Port, WATER_HOLD_OUT_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(RL1_OUT_Port, RL1_OUT_Pin, GPIO_PIN_SET);
+	HAL_GPIO_Init(RL1_OUT_Port, &GPIO_InitStruct);
+
+	GPIO_InitStruct.Pin = RL2_OUT_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(RL2_OUT_Port, &GPIO_InitStruct);
+
+	GPIO_InitStruct.Pin = RL3_OUT_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(RL3_OUT_Port, &GPIO_InitStruct);
+
+	GPIO_InitStruct.Pin = RL4_OUT_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(RL4_OUT_Port, &GPIO_InitStruct);
 
 	/*Configure GPIO pin : ADC12_IN0 */
 	GPIO_InitStruct.Pin = GPIO_PIN_0;
@@ -712,21 +820,21 @@ void adc(uint8_t argc, char **argv)
 	printf("temp: %0.3f C %0.3f C\n", tempInt, tempExt);
 }
 
-
-void water(uint8_t argc, char **argv)
+void relay(uint8_t argc, char **argv)
 {
-	static bool waterState = false;
-	printf("Toggle water\n");
-
-	if(waterState)
+	if(argc > 2)
 	{
-		waterState = false;
-		setWater(false);
+		uint8_t id = atoi(argv[1]);
+		bool state = atoi(argv[2]);
+		printf("Set %d: %s\n", id, state?GREEN("1"):RED("0"));
+		setRelay(id, state);
 	}
-	else
+
+	printf("Relays:\n");
+	for (int id = 1; id < 5; ++id)
 	{
-		waterState = true;
-		setWater(true);
+		bool state = getRelay(id);
+		printf(" %d: %s\n", id, state?GREEN("1"):RED("0"));
 	}
 }
 

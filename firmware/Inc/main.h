@@ -66,10 +66,14 @@
 #define NRF_IRQ_Pin GPIO_PIN_0
 #define NRF_IRQ_GPIO_Port GPIOB
 
-#define WATER_OUT_Port 	            GPIOB
-#define WATER_OUT_Pin 	            GPIO_PIN_8
-#define WATER_HOLD_OUT_Port 	    GPIOB
-#define WATER_HOLD_OUT_Pin 	        GPIO_PIN_9
+#define RL1_OUT_Port        GPIOA
+#define RL1_OUT_Pin         GPIO_PIN_8
+#define RL2_OUT_Port 	    GPIOB
+#define RL2_OUT_Pin         GPIO_PIN_15
+#define RL3_OUT_Port 	    GPIOB
+#define RL3_OUT_Pin         GPIO_PIN_14
+#define RL4_OUT_Port 	    GPIOB
+#define RL4_OUT_Pin         GPIO_PIN_13
 
 /* ########################## Assert Selection ############################## */
 /**

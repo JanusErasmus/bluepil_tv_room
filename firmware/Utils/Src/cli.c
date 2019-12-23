@@ -105,6 +105,8 @@ const sTermEntry_t helpEntry =
 void reboot(uint8_t argc, char **argv)
 {
 	printf("Rebooting...\n");
+
+    MX_IWDG_Refresh();
     NVIC_SystemReset();
 }
 

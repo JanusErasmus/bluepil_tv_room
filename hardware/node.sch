@@ -1,5 +1,4 @@
 EESchema Schematic File Version 4
-LIBS:bluepill_water-cache
 EELAYER 26 0
 EELAYER END
 $Descr A4 11693 8268
@@ -130,10 +129,6 @@ NoConn ~ 6550 3950
 NoConn ~ 6550 4050
 NoConn ~ 6550 4150
 NoConn ~ 6550 4250
-NoConn ~ 6550 4550
-NoConn ~ 6550 4650
-NoConn ~ 6550 4750
-NoConn ~ 6550 4850
 NoConn ~ 6550 4950
 NoConn ~ 4800 4650
 NoConn ~ 4800 4550
@@ -152,19 +147,6 @@ Wire Wire Line
 	6550 4450 7400 4450
 Text HLabel 7400 4450 2    50   Output ~ 0
 UART1_TX
-$Comp
-L bluepill_breakouts:BluePill_STM32F103C U?
-U 1 1 5C14BC04
-P 5650 3750
-AR Path="/5C14BC04" Ref="U?"  Part="1" 
-AR Path="/5C14BAF9/5C14BC04" Ref="U2"  Part="1" 
-F 0 "U2" H 5675 2278 50  0000 C CNN
-F 1 "BluePill_STM32F103C" H 5675 2187 50  0000 C CNN
-F 2 "DIP40" H 5700 2150 50  0001 C CNN
-F 3 "www.rogerclark.net" H 5650 2250 50  0001 C CNN
-	1    5650 3750
-	1    0    0    -1  
-$EndComp
 Wire Wire Line
 	4800 4750 4400 4750
 NoConn ~ 6550 3050
@@ -202,12 +184,35 @@ Text HLabel 7400 4350 2    50   Input ~ 0
 UART1_RX
 NoConn ~ 6550 3550
 NoConn ~ 6550 3650
+NoConn ~ 6550 3350
+NoConn ~ 6550 3450
+$Comp
+L bluepill_breakouts:BluePill_STM32F103C U?
+U 1 1 5C14BC04
+P 5650 3750
+AR Path="/5C14BC04" Ref="U?"  Part="1" 
+AR Path="/5C14BAF9/5C14BC04" Ref="U2"  Part="1" 
+F 0 "U2" H 5675 2278 50  0000 C CNN
+F 1 "BluePill_STM32F103C" H 5675 2187 50  0000 C CNN
+F 2 "DIP40" H 5700 2150 50  0001 C CNN
+F 3 "www.rogerclark.net" H 5650 2250 50  0001 C CNN
+	1    5650 3750
+	1    0    0    -1  
+$EndComp
 Wire Wire Line
-	6550 3350 7650 3350
+	6550 4550 7400 4550
 Wire Wire Line
-	6550 3450 7650 3450
-Text HLabel 7650 3350 2    50   Output ~ 0
-PB9
-Text HLabel 7650 3450 2    50   Output ~ 0
-PB8
+	6550 4650 7400 4650
+Wire Wire Line
+	6550 4750 7400 4750
+Wire Wire Line
+	6550 4850 7400 4850
+Text HLabel 7400 4550 2    50   Output ~ 0
+OUTPUT_1
+Text HLabel 7400 4650 2    50   Output ~ 0
+OUTPUT_2
+Text HLabel 7400 4750 2    50   Output ~ 0
+OUTPUT_3
+Text HLabel 7400 4850 2    50   Output ~ 0
+OUTPUT_4
 $EndSCHEMATC
